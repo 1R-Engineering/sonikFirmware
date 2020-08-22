@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <ESP32Servo.h>
 
-int servo_pin = 3;
+int servo_pin = 32;
 int pos = 0;
 
 Servo probe;
