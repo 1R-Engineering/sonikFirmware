@@ -48,28 +48,28 @@
 #include <ESP32Servo.h>
 
 //Inisialisasi pin gpio mikrokontroller
-#define TX_0            GPIO_NUM_1         // Pin untuk komunikasi antar board
-#define RX_0            GPIO_NUM_3         // Pin untuk komunikasi antar board
-#define TX_2            GPIO_NUM_17        // Pin untuk komunikasi antar board
-#define RX_2            GPIO_NUM_16        // Pin untuk komunikasi antar board
-#define pompamixA       26                 // Pin pompa larutan A
-#define pompamixB       27                 // Pin pompa larutan B
-#define pompaAcid       25                 // Pin pompa larutan Asam
-#define pompaBase       33                 // Pin pompa larutan Basa
-#define solenoid        22                 // Pin solenoid
-#define pumpAC          21                 // Pin pompa AC (tapi rasido kan
-#define pin_ds_temp     13                 // Pin sensor temperatur air dengan DS
-#define pin_sensor_pH   12                 // Pin sensor sensor pH
-#define TDSSensorPin    14                 // Pin sensor TDS
-#define echoLev         4                  // Pin echo Ultrasonik
-#define trigLev         2                  // Pin trigger Ultrasonik
-#define pin_servo       32
-#define TdsSensorPin    14
-#define VREF            3.3
-#define SCOUNT          30
+#define TX_0 GPIO_NUM_1  // Pin untuk komunikasi antar board
+#define RX_0 GPIO_NUM_3  // Pin untuk komunikasi antar board
+#define TX_2 GPIO_NUM_17 // Pin untuk komunikasi antar board
+#define RX_2 GPIO_NUM_16 // Pin untuk komunikasi antar board
+#define pompamixA 26     // Pin pompa larutan A
+#define pompamixB 27     // Pin pompa larutan B
+#define pompaAcid 25     // Pin pompa larutan Asam
+#define pompaBase 33     // Pin pompa larutan Basa
+#define solenoid 22      // Pin solenoid
+#define pumpAC 21        // Pin pompa AC (tapi rasido kan
+#define pin_ds_temp 13   // Pin sensor temperatur air dengan DS
+#define pin_sensor_pH 12 // Pin sensor sensor pH
+#define TDSSensorPin 14  // Pin sensor TDS
+#define echoLev 4        // Pin echo Ultrasonik
+#define trigLev 2        // Pin trigger Ultrasonik
+#define pin_servo 32
+#define TdsSensorPin 14
+#define VREF 3.3
+#define SCOUNT 30
 
 float nilai_test, set_point, ph_setpoint_atas,
-    ph_setpoint_bawah, nilai_test_pH;
+    ph_setpoint_bawah, nilai_ph;
 
 //Nama device
 char namaDevice[] = "Sonik32";
@@ -93,7 +93,7 @@ unsigned long lastMillisTDS = 0; //Penganti delay
 boolean statusStabilisasipH;
 boolean statusStabilisasiTDS;
 
-String payload; //Variabel yang menyimpan data yang akan dikirim
+String data; //Variabel yang menyimpan data yang akan dikirim
 
 bool bluetoothConStatus = false; //Status koneksi Bluetooth, apabila sudah terkoneksi maka ini akan true
 
@@ -102,7 +102,7 @@ String ssidPrim, passPrim; //Menyimpan variabel ssid dari wifi
 char server_jam[3], server_menit[3], server_detik[3];
 char jam[] = "07";
 char menit[] = "30";
-
+char cmd[] = "test";
 /*
     Inisialisasi bluetooth yang nantinya akan digunakan
     untuk mengambil pengaturan wifi dari android (hp user)
@@ -122,6 +122,14 @@ float getLevelAir();
 void pompa(int pinPompa, int miliLiter);
 void hidupkanSolenoid(int pin_ledeng, int durasi);
 void kontrol_servo(int modeServo);
+
+Void messageReceived(String &topic, String &payload)
+{
+    Serial.println("incoming: " + topic + " - " + payload);
+    char payloadBuffer(payload.length());
+    payload.toCharArray(payloadBuffer, payload.length());
+
+}
 
 void setup()
 {
@@ -174,27 +182,32 @@ void loop()
     strftime(server_jam, 3, "%H", &timeinfo);
 
     //Keperluan debug sensor
-    if (millis() - lastMillisTDS > 1000)
+    if (millis() - lastMillis > pubDelay)
     {
+        lastMillis = millis();
+
         if (!getLocalTime(&timeinfo))
         {
             Serial.println("Failed to obtain time");
         }
-        lastMillisTDS = millis();
+
         // nilai_TDS = ambil_nilai_TDS();
         Serial.println(server_detik);
 
         /*
             Setiap jam 9 pagi akan dilakukan
         */
-        if (strcmp(server_jam, jam) == 0 && strcmp(server_menit, menit) == 0)
+
+        if ((strcmp(server_jam, jam) == 0 && strcmp(server_menit, menit) == 0) || strcmp(messageReceived(&topic, payload), cmd) == 0)
         {
             /*
                 Disini jalankan pengecekan tds dan ph
             */
             Serial.println("cek/stabilke");
-            nilai_test_pH = ambil_nilai_pH(pin_sensor_pH, 30); //Menjalankan test dengan 30 sample (30 detik)
+            data = "";
+            nilai_ph = ambil_nilai_pH(pin_sensor_pH, 30); //Menjalankan test dengan 30 sample (30 detik)
             nilai_TDS = ambil_nilai_TDS();
+
             //jalankan fungsi pengecekan
             kontrol_servo(0);
             while (statusStabilisasiTDS == true)
@@ -206,6 +219,7 @@ void loop()
                     delay(10); //Ganti dengan 300000ms (5 menit)
                     pompa(pompamixB, 5);
                     delay(10); //Ganti dengan 300000ms (5 menit)
+                    nilai_TDS = ambil_nilai_TDS();
                     Serial.println("Penambahan Selesai");
                 }
 
@@ -213,7 +227,8 @@ void loop()
                 {
                     Serial.println("TDS Kelebihan, akan dikurang");
                     hidupkanSolenoid(solenoid, 1000);
-                    nilai_test -= 5;
+                    delay(10); //Delay 5 min
+                    nilai_TDS = ambil_nilai_TDS();
                     Serial.println("Pengurangan Selesai");
                 }
 
@@ -228,21 +243,22 @@ void loop()
             //Habis ini stabilisasi pH
             while (statusStabilisasipH == true)
             {
-                if (nilai_test_pH > ph_setpoint_atas)
+                if (nilai_ph > ph_setpoint_atas)
                 {
                     Serial.println("Nilai pH terlalu tinggi, menurunkan");
                     pompa(pompaAcid, 10);
                     Serial.println("Mengunggu 5 menit");
                     delay(10); //Tunggu 5 menit
-                    nilai_test_pH -= 0.5;
+                    nilai_ph = ambil_nilai_pH(pin_sensor_pH, 30);
                     Serial.println("Penurunan Selesai");
                 }
-                else if (nilai_test_pH < ph_setpoint_bawah)
+                else if (nilai_ph < ph_setpoint_bawah)
                 {
                     Serial.println("Nilai pH terlalu rendah, menaikan");
                     pompa(pompaBase, 10);
                     Serial.println("Mengunggu 5 menit");
                     delay(10); //Tunggu 5 menit
+                    nilai_ph = ambil_nilai_pH(pin_sensor_pH, 30);
                     Serial.println("Selesai");
                 }
                 else
@@ -251,36 +267,23 @@ void loop()
                     statusStabilisasipH = false;
                 }
             }
+            delay(5000); //Delay diluk
+            jsonSensor["pH"] = nilai_ph;
+            jsonSensor["TDS"] = nilai_TDS;
+            kontrol_servo(1); //Servo naik
         }
         else
         {
             Serial.println("rung wayaje");
         }
-    }
-
-    //Ketika jam 9.00 maka alat akan bekerja
-
-    if (millis() - lastMillis > pubDelay)
-    {
-        lastMillis = millis();
-
-        sensors.requestTemperatures();
-
-        // jsonSensor["TDS"] = ambil_nilai_TDS();
-        // jsonSensor["pH"] = ambil_nilai_pH(12);
-        // jsonSensor["Level Air"] = getLevelAir();
-        // jsonSensor["Suhu Air"] = random(0, 100);
-        // serializeJson(jsonSensor, payload);
-        // Serial.println(payload);
-        // publishTelemetry(payload);
-        payload = "";
-
-        Serial.print(server_jam);
-        Serial.print("\t");
-        Serial.print(server_menit);
-        Serial.print("\t");
-        Serial.print(server_detik);
-        Serial.print("\t");
+        jsonSensor["pH"] = nilai_ph;
+        jsonSensor["levelAir"] = getLevelAir();
+        jsonSensor["suhuAir"] = random(0, 100);
+        jsonSensor["TDS"] = nilai_TDS;
+        serializeJson(jsonSensor, data);
+        Serial.println(data);
+        publishTelemetry(data);
+        data = "";
     }
 }
 

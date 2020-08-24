@@ -18,9 +18,7 @@
 // !!REPLACEME!!
 // The MQTT callback function for commands and configuration updates
 // Place your message handler code here.
-void messageReceived(String &topic, String &payload) {
-  Serial.println("incoming: " + topic + " - " + payload);
-}
+
 ///////////////////////////////
 
 // Initialize WiFi and MQTT for this board
