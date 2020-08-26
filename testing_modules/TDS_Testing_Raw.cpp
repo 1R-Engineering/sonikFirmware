@@ -8,30 +8,17 @@ int analogBufferTemp[SCOUNT];
 int analogBufferIndex = 0,copyIndex = 0;
 float averageVoltage = 0,tdsValue = 0,temperature = 25;
 
+int getMedianNum(int bArray[], int iFilterLen);
+
 void setup()
 {
     Serial.begin(115200);
     pinMode(TdsSensorPin,INPUT);
-	  delay(1000);
 }
-
-int getMedianNum(int bArray[], int iFilterLen);
-float get_ppm();
 
 void loop()
 {
-  float myResult = 0;
-  for(int i = 0; i < 30; i++){
-    myResult = get_ppm();
-    delay(100);
-  }
-	Serial.print("My result : ");
-	Serial.println(myResult);
-  delay(1000);
-}
-
-float get_ppm(){
-	static unsigned long analogSampleTimepoint = millis();
+   static unsigned long analogSampleTimepoint = millis();
    if(millis()-analogSampleTimepoint > 40U)     //every 40 milliseconds,read the analog value from the ADC
    {
      analogSampleTimepoint = millis();
@@ -56,7 +43,6 @@ float get_ppm(){
       Serial.print("TDS Value:");
       Serial.print(tdsValue,0);
       Serial.println("ppm");
-	  return tdsValue;
    }
 }
 

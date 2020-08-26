@@ -1,5 +1,5 @@
-const char *ssid = "Sanea";
-const char *password = "resistor10k";
+const char *ssid = "bequiet!";
+const char *password = "Basoka123";
 
 const char *project_id = "sonikiot";
 const char *location = "asia-east1";

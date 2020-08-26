@@ -90,8 +90,8 @@ int pos = 0;
 unsigned long lastMillis = 0;    //Penganti delay
 unsigned long lastMillisTDS = 0; //Penganti delay
 
-boolean statusStabilisasipH;
-boolean statusStabilisasiTDS;
+boolean statusStabilisasipH = true;
+boolean statusStabilisasiTDS = true;
 
 String data; //Variabel yang menyimpan data yang akan dikirim
 
@@ -100,8 +100,8 @@ bool bluetoothConStatus = false; //Status koneksi Bluetooth, apabila sudah terko
 //Variabel penyimpan string ssid dan password wifi
 String ssidPrim, passPrim; //Menyimpan variabel ssid dari wifi
 char server_jam[3], server_menit[3], server_detik[3];
-char jam[] = "07";
-char menit[] = "30";
+char jam[] = "09";
+char menit[] = "00";
 char cmd[] = "test";
 /*
     Inisialisasi bluetooth yang nantinya akan digunakan
@@ -123,12 +123,11 @@ void pompa(int pinPompa, int miliLiter);
 void hidupkanSolenoid(int pin_ledeng, int durasi);
 void kontrol_servo(int modeServo);
 
-Void messageReceived(String &topic, String &payload)
+void messageReceived(String &topic, String &payload)
 {
     Serial.println("incoming: " + topic + " - " + payload);
-    char payloadBuffer(payload.length());
-    payload.toCharArray(payloadBuffer, payload.length());
-
+    // char payloadBuffer(payload.length());
+    // payload.toCharArray(payloadBuffer, payload.length());
 }
 
 void setup()
@@ -170,72 +169,90 @@ void loop()
 {
     DynamicJsonDocument jsonSensor(200);
     mqttClient->loop();
+    struct tm timeinfo;
+    strftime(server_detik, 3, "%S", &timeinfo);
+    strftime(server_menit, 3, "%M", &timeinfo);
+    strftime(server_jam, 3, "%H", &timeinfo);
 
     if (!mqttClient->connected())
     {
         connect();
     }
 
-    struct tm timeinfo;
-    strftime(server_detik, 3, "%S", &timeinfo);
-    strftime(server_menit, 3, "%M", &timeinfo);
-    strftime(server_jam, 3, "%H", &timeinfo);
+    if (!getLocalTime(&timeinfo))
+    {
+        Serial.println("Failed to obtain time");
+    }
 
     //Keperluan debug sensor
     if (millis() - lastMillis > pubDelay)
     {
         lastMillis = millis();
 
-        if (!getLocalTime(&timeinfo))
-        {
-            Serial.println("Failed to obtain time");
-        }
-
         // nilai_TDS = ambil_nilai_TDS();
+        Serial.print(server_jam);
+        Serial.print(" ");
+        Serial.print(server_menit);
+        Serial.print(" ");
         Serial.println(server_detik);
 
         /*
             Setiap jam 9 pagi akan dilakukan
         */
-
-        if ((strcmp(server_jam, jam) == 0 && strcmp(server_menit, menit) == 0) || strcmp(messageReceived(&topic, payload), cmd) == 0)
+        if ((strcmp(server_jam, jam) == 0 && strcmp(server_menit, menit) == 0))
         {
             /*
                 Disini jalankan pengecekan tds dan ph
             */
+
             Serial.println("cek/stabilke");
             data = "";
+            Serial.println("Servo turun start");
+            for (pos = 75; pos <= 180; pos += 1)
+            {
+                servoProbe.write(pos); // tell servo to go to position in variable 'pos'
+                delay(15);             // waits 15ms for the servo to reach the position
+            }
+            
+            //jalankan fungsi pengecekan
+            kontrol_servo(0);
+
             nilai_ph = ambil_nilai_pH(pin_sensor_pH, 30); //Menjalankan test dengan 30 sample (30 detik)
             nilai_TDS = ambil_nilai_TDS();
 
-            //jalankan fungsi pengecekan
-            kontrol_servo(0);
+            Serial.print("Nilai TDS: ");
+            Serial.print(nilai_TDS);
+            Serial.print("\t||\t");
+            Serial.print("Nilai pH: ");
+            Serial.println(nilai_ph);
+
             while (statusStabilisasiTDS == true)
             {
                 if (nilai_TDS < (set_point - 50))
                 {
                     Serial.println("TDS Kurang, akan ditambahkan");
                     pompa(pompamixA, 5);
-                    delay(10); //Ganti dengan 300000ms (5 menit)
+                    delay(300000); //Ganti dengan 300000ms (5 menit)
                     pompa(pompamixB, 5);
-                    delay(10); //Ganti dengan 300000ms (5 menit)
+                    delay(300000); //Ganti dengan 300000ms (5 menit)
                     nilai_TDS = ambil_nilai_TDS();
                     Serial.println("Penambahan Selesai");
                 }
 
-                else if (nilai_TDS > (set_point + 50))
-                {
-                    Serial.println("TDS Kelebihan, akan dikurang");
-                    hidupkanSolenoid(solenoid, 1000);
-                    delay(10); //Delay 5 min
-                    nilai_TDS = ambil_nilai_TDS();
-                    Serial.println("Pengurangan Selesai");
-                }
+                //Rasido tambah banyu
+                // else if (nilai_TDS > (set_point + 50))
+                // {
+                //     Serial.println("TDS Kelebihan, akan dikurang");
+                //     hidupkanSolenoid(solenoid, 500);
+                //     delay(300000); //Delay 5 min
+                //     nilai_TDS = ambil_nilai_TDS();
+                //     Serial.println("Pengurangan Selesai");
+                // }
 
                 else
                 {
                     Serial.print("TDS Sudah stabil di nilai: ");
-                    Serial.println(nilai_test);
+                    Serial.println(nilai_TDS);
                     statusStabilisasiTDS = false;
                 }
             }
@@ -270,16 +287,19 @@ void loop()
             delay(5000); //Delay diluk
             jsonSensor["pH"] = nilai_ph;
             jsonSensor["TDS"] = nilai_TDS;
+            jsonSensor["suhuAir"] = random(0, 100);
+            jsonSensor["levelAir"] = getLevelAir();
+            serializeJson(jsonSensor, data);
+            Serial.println(data);
+            publishTelemetry(data);
+            data = "";
             kontrol_servo(1); //Servo naik
         }
         else
         {
             Serial.println("rung wayaje");
         }
-        jsonSensor["pH"] = nilai_ph;
         jsonSensor["levelAir"] = getLevelAir();
-        jsonSensor["suhuAir"] = random(0, 100);
-        jsonSensor["TDS"] = nilai_TDS;
         serializeJson(jsonSensor, data);
         Serial.println(data);
         publishTelemetry(data);
@@ -419,20 +439,21 @@ void kontrol_servo(int modeServo)
 {
     switch (modeServo)
     {
-    case 1:
-        Serial.println("Servo turun start");
-        for (pos = 0; pos <= 180; pos += 1)
-        {
-            servoProbe.write(pos);
-            delay(15);
-        }
-        break;
     case 0:
-        Serial.println("Servo naik start");
-        for (pos = 0; pos <= 180; pos += 1)
+        Serial.println("Servo turun start");
+        for (pos = 75; pos <= 180; pos += 1)
         {
-            servoProbe.write(pos);
-            delay(15);
+            servoProbe.write(pos); // tell servo to go to position in variable 'pos'
+            delay(15);             // waits 15ms for the servo to reach the position
+        }
+
+        break;
+    case 1:
+        Serial.println("Servo naik start");
+        for (pos = 180; pos >= 75; pos -= 1)
+        {                          // goes from 180 degrees to 0 degrees
+            servoProbe.write(pos); // tell servo to go to position in variable 'pos'
+            delay(15);             // waits 15ms for the servo to reach the position
         }
         break;
     default:

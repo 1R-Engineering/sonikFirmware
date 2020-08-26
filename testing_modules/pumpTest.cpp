@@ -18,7 +18,7 @@ void crot_Pompa(int pin, int miliLiter, int k);
 
 void setup() {
   ledcSetup(0, 1000, 8);
-  ledcAttachPin(33, 0);
+  ledcAttachPin(pinPompa, 0);
   Serial.begin(115200);
   pinMode(pinPompa, OUTPUT);
   Serial.println("Ready\n");
