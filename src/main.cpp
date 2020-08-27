@@ -82,13 +82,13 @@ float ph_setpoint_atas = 6.5;
 boolean statusStabilisasiTDS = true;
 boolean statusStabilisasipH = true;
 
-int set_point = 1000;       //Wajib diganti 0
+int set_point = 1000; //Wajib diganti 0
 
 Servo servoProbe;
 
 char server_jam[3], server_menit[3], server_detik[3];
 char jam[] = "21";
-char menit[] = "31";
+char menit[] = "42";
 
 float levelAirAktual = 0;
 float jumlah = 0;
@@ -97,7 +97,7 @@ unsigned long lastMillis = 0; //Penganti delay
 
 float kedalmanAir;
 
-boolean modeSet = false;
+boolean modeSet = true;
 volatile int interruptCounter;
 int totalInterruptCounter;
 
@@ -338,6 +338,11 @@ void loop()
     strftime(server_menit, 3, "%M", &timeinfo);
     strftime(server_jam, 3, "%H", &timeinfo);
 
+    if (!getLocalTime(&timeinfo))
+    {
+        Serial.println("Failed to obtain time");
+    }
+
     Serial.print(server_jam);
     Serial.print("  ");
     Serial.print(server_menit);
@@ -370,48 +375,27 @@ void loop()
         {
             delay(100);
             levelAirAktual = getLevelAir();
-
-            if (interruptCounter > 0)
+            if (levelAirAktual > 7)
             {
-                portENTER_CRITICAL(&timerMux);
-                interruptCounter--;
-                portEXIT_CRITICAL(&timerMux);
-
-                totalInterruptCounter++;
-
-                Serial.print("An interrupt as occurred. Total number: ");
-                Serial.println(totalInterruptCounter);
-
-                if (levelAirAktual > 7)
-                {
-                    Serial.print("Menghidupkan solenoid, ketinggian air: ");
-                    Serial.println(levelAirAktual);
-                    modeSet = true;
-                }
-
-                else if (levelAirAktual <= 5)
-                {
-                    Serial.print("Nilai sudah sampai: ");
-                    Serial.println(levelAirAktual);
-                    modeSet = false;
-                }
-
-                else if (levelAirAktual > 30)
-                {
-                    modeSet = false;
-                }
-
-                else
-                {
-                    Serial.println("Sudah pas");
-                    modeSet = false;
-                }
+                Serial.print("Menghidupkan solenoid, ketinggian air: ");
+                Serial.println(levelAirAktual);
+                modeSet = true;
             }
-            if (modeSet == true)
-                digitalWrite(pin_sole, HIGH);
+
+            else if (levelAirAktual <= 5)
+            {
+                Serial.print("Nilai sudah sampai: ");
+                Serial.println(levelAirAktual);
+                modeSet = false;
+            }
 
             else
-                digitalWrite(pin_sole, LOW);
+            {
+                Serial.print("Sudah pas");
+                Serial.println(levelAirAktual);
+                modeSet = false;
+            }
+            digitalWrite(pin_sole, LOW);
         }
 
         while (statusStabilisasiTDS == true)
