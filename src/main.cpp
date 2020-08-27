@@ -60,6 +60,9 @@
 #define pin_pH_down 33
 #define pin_pH_up 25
 
+#define trigLev 2
+#define echoLev 4
+
 String data; //Variabel yang menyimpan data yang akan dikirim
 
 int analogBuffer[sample_count];
@@ -79,21 +82,71 @@ float ph_setpoint_atas = 6.5;
 boolean statusStabilisasiTDS = true;
 boolean statusStabilisasipH = true;
 
-int set_point = 1000; //Wajib diganti 0
+int set_point = 1000;       //Wajib diganti 0
 
 Servo servoProbe;
 
 char server_jam[3], server_menit[3], server_detik[3];
-char jam[] = "19";
-char menit[] = "40";
+char jam[] = "21";
+char menit[] = "31";
+
+float levelAirAktual = 0;
+float jumlah = 0;
 
 unsigned long lastMillis = 0; //Penganti delay
+
+float kedalmanAir;
+
+boolean modeSet = false;
+volatile int interruptCounter;
+int totalInterruptCounter;
+
+hw_timer_t *timer = NULL;
+portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
+
+void IRAM_ATTR onTimer()
+{
+    portENTER_CRITICAL_ISR(&timerMux);
+    interruptCounter++;
+    portEXIT_CRITICAL_ISR(&timerMux);
+}
 
 void messageReceived(String &topic, String &payload)
 {
     Serial.println("incoming: " + topic + " - " + payload);
-    DynamicJsonDocument dataInputJSON(200);
-    deserializeJson(dataInputJSON, payload);
+}
+
+float getLevelAir()
+{
+    float kedalaman;
+    long durasiPantul;
+    digitalWrite(trigLev, LOW);
+    delayMicroseconds(2);
+    digitalWrite(trigLev, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigLev, LOW);
+    durasiPantul = (pulseIn(echoLev, HIGH));
+    kedalaman = durasiPantul * 0.034 / 2;
+    return kedalaman;
+}
+
+float rataAir()
+{
+    float tempKedalaman[10];
+    for (int i = 0; i < 10; i++)
+    {
+        tempKedalaman[i] = 0;
+    }
+
+    for (int i = 0; i < 10; i++)
+    {
+        tempKedalaman[i] = getLevelAir();
+        jumlah = jumlah + tempKedalaman[i];
+        Serial.print("Mengambil nilai jarak dengan nilai: ");
+        Serial.println(tempKedalaman[i]);
+        delay(10);
+    }
+    return jumlah / 10;
 }
 
 /*
@@ -271,7 +324,6 @@ void setup()
 
 void loop()
 {
-
     DynamicJsonDocument dataJSON(200);
     mqttClient->loop();
 
@@ -280,7 +332,19 @@ void loop()
         connect();
     }
 
-    if(strcmp(server_jam, jam) == 0 && strcmp(server_menit, menit) == 0)
+    Serial.println("MAIN LOOP");
+    struct tm timeinfo;
+    strftime(server_detik, 3, "%S", &timeinfo);
+    strftime(server_menit, 3, "%M", &timeinfo);
+    strftime(server_jam, 3, "%H", &timeinfo);
+
+    Serial.print(server_jam);
+    Serial.print("  ");
+    Serial.print(server_menit);
+    Serial.print("  ");
+    Serial.println(server_detik);
+
+    if (strcmp(server_jam, jam) == 0 && strcmp(server_menit, menit) == 0)
     {
         kontrol_servo(0);
         Serial.println("RAPID TDS READ");
@@ -296,12 +360,59 @@ void loop()
         nilai_pH = ambil_nilai_pH();
 
         Serial.println("Done");
-        delay(5000);
 
         Serial.print("Nilai TDS: ");
         Serial.print(nilai_TDS);
         Serial.print(" Nilai pH: ");
         Serial.println(nilai_pH);
+
+        while (modeSet == true)
+        {
+            delay(100);
+            levelAirAktual = getLevelAir();
+
+            if (interruptCounter > 0)
+            {
+                portENTER_CRITICAL(&timerMux);
+                interruptCounter--;
+                portEXIT_CRITICAL(&timerMux);
+
+                totalInterruptCounter++;
+
+                Serial.print("An interrupt as occurred. Total number: ");
+                Serial.println(totalInterruptCounter);
+
+                if (levelAirAktual > 7)
+                {
+                    Serial.print("Menghidupkan solenoid, ketinggian air: ");
+                    Serial.println(levelAirAktual);
+                    modeSet = true;
+                }
+
+                else if (levelAirAktual <= 5)
+                {
+                    Serial.print("Nilai sudah sampai: ");
+                    Serial.println(levelAirAktual);
+                    modeSet = false;
+                }
+
+                else if (levelAirAktual > 30)
+                {
+                    modeSet = false;
+                }
+
+                else
+                {
+                    Serial.println("Sudah pas");
+                    modeSet = false;
+                }
+            }
+            if (modeSet == true)
+                digitalWrite(pin_sole, HIGH);
+
+            else
+                digitalWrite(pin_sole, LOW);
+        }
 
         while (statusStabilisasiTDS == true)
         {
@@ -312,9 +423,9 @@ void loop()
                 ledcWrite(0, 100);
                 delay((850));
                 ledcWrite(0, 0);
-                delay(100); //Ganti dengan 300000ms (5 menit)
+                delay(300000); //Ganti dengan 300000ms (5 menit)
                 ledcWrite(1, 100);
-                delay((850));
+                delay((300000));
                 ledcWrite(1, 0);
                 delay(100); //Ganti dengan 300000ms (5 menit)
                 Serial.println("Penambahan Selesai");
@@ -358,15 +469,12 @@ void loop()
                 statusStabilisasipH = false;
             }
         }
+
         delay(1000);
-    Serial.println("Servo naik start");
-    kontrol_servo(1);
-    Serial.println("Selesai");
+        Serial.println("Servo naik start");
+        kontrol_servo(1);
+        Serial.println("Selesai");
     }
 
-    if(millis() - lastMillis > 900000)
-    {
-        
-    }
-    
+    delay(1000);
 }
