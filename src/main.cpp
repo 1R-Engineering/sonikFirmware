@@ -84,8 +84,8 @@ int set_point = 1000; //Wajib diganti 0
 Servo servoProbe;
 
 char server_jam[3], server_menit[3], server_detik[3];
-char jam[] = "15";
-char menit[] = "00";
+char jam[] = "19";
+char menit[] = "40";
 
 unsigned long lastMillis = 0; //Penganti delay
 
@@ -94,7 +94,6 @@ void messageReceived(String &topic, String &payload)
     Serial.println("incoming: " + topic + " - " + payload);
     DynamicJsonDocument dataInputJSON(200);
     deserializeJson(dataInputJSON, payload);
-
 }
 
 /*
@@ -267,124 +266,107 @@ void setup()
 
     Serial.println("Starting device");
 
-    // setupCloudIoT();
+    setupCloudIoT();
 }
 
 void loop()
 {
 
-    // DynamicJsonDocument dataJSON(200);
-    // mqttClient->loop();
+    DynamicJsonDocument dataJSON(200);
+    mqttClient->loop();
 
-    // if (!mqttClient->connected())
-    // {
-    //     connect();
-    // }
-
-    if (Serial.available())
+    if (!mqttClient->connected())
     {
-        if (Serial.parseInt() == 1)
-        {
-            tdsValue = 0;
-            nilai_TDS = 0;
-
-            kontrol_servo(0);
-            Serial.println("RAPID TDS READ");
-
-            for (int i = 0; i < 30; i++)
-            {
-                nilai_TDS = get_ppm();
-                delay(100);
-            }
-            Serial.print("Nilai TDS: ");
-            Serial.println(nilai_TDS);
-
-            nilai_pH = ambil_nilai_pH();
-
-            Serial.println("Done");
-            delay(5000);
-
-            Serial.print("Nilai TDS: ");
-            Serial.print(nilai_TDS);
-            Serial.print(" Nilai pH: ");
-            Serial.println(nilai_pH);
-
-            // while (statusStabilisasiTDS == true)
-            // {
-            //     Serial.println("Stablilisasi TDS");
-            //     if (nilai_TDS < (set_point - 50))
-            //     {
-            //         Serial.println("TDS Kurang, akan ditambahkan");
-            //         ledcWrite(0, 100);
-            //         delay((850));
-            //         ledcWrite(0, 0);
-            //         delay(100); //Ganti dengan 300000ms (5 menit)
-            //         ledcWrite(1, 100);
-            //         delay((850));
-            //         ledcWrite(1, 0);
-            //         delay(100); //Ganti dengan 300000ms (5 menit)
-            //         Serial.println("Penambahan Selesai");
-            //         nilai_TDS = get_ppm();
-            //         Serial.print("Nilai TDS: ");
-            //         Serial.println(nilai_TDS);
-            //     }
-
-            //     else
-            //     {
-            //         Serial.print("TDS Sudah stabil di nilai: ");
-            //         Serial.println(nilai_TDS);
-            //         statusStabilisasiTDS = false;
-            //     }
-            //     Serial.println("Selesai TDS");
-            // }
-
-            // Habis ini stabilisasi pH
-            // while (statusStabilisasipH == true)
-            // {
-            //     if (nilai_pH > ph_setpoint_atas)
-            //     {
-            //         Serial.println("Nilai pH terlalu tinggi, menurunkan");
-            //         //pompa(pin_pH_down, 10);
-            //         Serial.println("Mengunggu 5 menit");
-            //         delay(100); //Tunggu 5 menit
-            //         Serial.println("Penurunan Selesai");
-            //         break;
-            //     }
-            //     else if (nilai_pH < ph_setpoint_bawah)
-            //     {
-            //         Serial.println("Nilai pH terlalu rendah, menaikan");
-            //         //pompa(pin_pH_up, 10);
-            //         Serial.println("Mengunggu 5 menit");
-            //         delay(100); //Tunggu 5 menit
-            //         Serial.println("Selesai");
-            //         break;
-            //     }
-            //     else
-            //     {
-            //         Serial.println("Nilai pH sudah stabil, penyesuaian selesai");
-            //         statusStabilisasipH = false;
-            //     }
-            // }
-            // dataJSON["pH"] = nilai_pH;
-            // dataJSON["TDS"] = nilai_TDS;
-            // dataJSON["suhu_Air"] = random(0, 100);
-            // dataJSON["level_Air"] = random(0, 100);
-            // serializeJson(dataJSON, data);
-            // Serial.println(data);
-            // publishTelemetry(data);
-            delay(1000);
-            Serial.println("Servo naik start");
-            kontrol_servo(1);
-            Serial.println("Selesai");
-        }
-
-        else
-        {
-            Serial.println("NOTHING");
-            ledcWrite(1, 0);
-            ledcWrite(2, 0);
-            ledcWrite(3, 0);
-            ledcWrite(4, 0);
-        }
+        connect();
     }
+
+    if(strcmp(server_jam, jam) == 0 && strcmp(server_menit, menit) == 0)
+    {
+        kontrol_servo(0);
+        Serial.println("RAPID TDS READ");
+
+        for (int i = 0; i < 30; i++)
+        {
+            nilai_TDS = get_ppm();
+            delay(100);
+        }
+        Serial.print("Nilai TDS: ");
+        Serial.println(nilai_TDS);
+
+        nilai_pH = ambil_nilai_pH();
+
+        Serial.println("Done");
+        delay(5000);
+
+        Serial.print("Nilai TDS: ");
+        Serial.print(nilai_TDS);
+        Serial.print(" Nilai pH: ");
+        Serial.println(nilai_pH);
+
+        while (statusStabilisasiTDS == true)
+        {
+            Serial.println("Stablilisasi TDS");
+            if (nilai_TDS < (set_point - 50))
+            {
+                Serial.println("TDS Kurang, akan ditambahkan");
+                ledcWrite(0, 100);
+                delay((850));
+                ledcWrite(0, 0);
+                delay(100); //Ganti dengan 300000ms (5 menit)
+                ledcWrite(1, 100);
+                delay((850));
+                ledcWrite(1, 0);
+                delay(100); //Ganti dengan 300000ms (5 menit)
+                Serial.println("Penambahan Selesai");
+                nilai_TDS = get_ppm();
+                Serial.print("Nilai TDS: ");
+                Serial.println(nilai_TDS);
+            }
+            else
+            {
+                Serial.print("TDS Sudah stabil di nilai: ");
+                Serial.println(nilai_TDS);
+                statusStabilisasiTDS = false;
+            }
+            Serial.println("Selesai TDS");
+        }
+
+        // Habis ini stabilisasi pH
+        while (statusStabilisasipH == true)
+        {
+            if (nilai_pH > ph_setpoint_atas)
+            {
+                Serial.println("Nilai pH terlalu tinggi, menurunkan");
+                //pompa(pin_pH_down, 10);
+                Serial.println("Mengunggu 5 menit");
+                delay(100); //Tunggu 5 menit
+                Serial.println("Penurunan Selesai");
+                break;
+            }
+            else if (nilai_pH < ph_setpoint_bawah)
+            {
+                Serial.println("Nilai pH terlalu rendah, menaikan");
+                //pompa(pin_pH_up, 10);
+                Serial.println("Mengunggu 5 menit");
+                delay(100); //Tunggu 5 menit
+                Serial.println("Selesai");
+                break;
+            }
+            else
+            {
+                Serial.println("Nilai pH sudah stabil, penyesuaian selesai");
+                statusStabilisasipH = false;
+            }
+        }
+        delay(1000);
+    Serial.println("Servo naik start");
+    kontrol_servo(1);
+    Serial.println("Selesai");
+    }
+
+    if(millis() - lastMillis > 900000)
+    {
+        
+    }
+    
 }
