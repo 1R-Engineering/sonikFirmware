@@ -11,9 +11,9 @@
 #include <CloudIoTCoreMqtt.h>
 #include "ciotc_config.h" // Update this file with your configuration
 
-#define LEDWIFICON  19
-#define LEDIOTCON   23
-#define LEDMQTT     18
+// #define LEDWIFICON  19
+// #define LEDIOTCON   23
+// #define LEDMQTT     18
 
 // !!REPLACEME!!
 // The MQTT callback function for commands and configuration updates
@@ -50,12 +50,12 @@ void setupWifi() {
   // WiFi.setSleep(false); // May help with disconnect? Seems to have been removed from WiFi
   WiFi.begin(ssid, password);
   Serial.println("Connecting to WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
-    digitalWrite(LEDWIFICON, LOW);
-    delay(50);
-    digitalWrite(LEDWIFICON, HIGH);
-    delay(50);
-  }
+  // while (WiFi.status() != WL_CONNECTED) {
+  //   // digitalWrite(LEDWIFICON, LOW);
+  //   // delay(50);
+  //   // digitalWrite(LEDWIFICON, HIGH);
+  //   // delay(50);
+  // }
 
   configTime(25200, 0, ntp_primary, ntp_secondary);
   Serial.println("Waiting on time sync...");
@@ -94,7 +94,7 @@ bool publishTelemetry(String subfolder, const char* data, int length) {
 void connect() {
   connectWifi();
   mqtt->mqttConnect();
-  digitalWrite(13, HIGH);
+  // digitalWrite(13, HIGH);
 }
 
 void setupCloudIoT() {
