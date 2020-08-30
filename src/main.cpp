@@ -61,8 +61,8 @@
 #define pin_pH_down 33
 #define pin_pH_up 25
 
-#define trigLev 2
-#define echoLev 4
+#define trigLev 12
+#define echoLev 14
 
 String data; //Variabel yang menyimpan data yang akan dikirim
 
@@ -83,16 +83,17 @@ float ph_setpoint_atas = 6.5;
 OneWire oneWire(pin_ds_temp);
 DallasTemperature sensors(&oneWire);
 
-boolean statusStabilisasiTDS;
-boolean statusStabilisasipH;
+boolean statusStabilisasiTDS = true;
+boolean statusStabilisasipH = true;
 
 int set_point = 1000; //Wajib diganti 0
 
 Servo servoProbe;
 
 char server_jam[3], server_menit[3], server_detik[3];
-char jam[] = "06";
-char menit[] = "40";
+char jam[] = "08";
+char menit[] = "00";
+
 char molas[] = "21";
 char patmo[] = "45";
 
@@ -112,7 +113,8 @@ void messageReceived(String &topic, String &payload)
     Serial.println("incoming: " + topic + " - " + payload);
 }
 
-int toInt(char c) {
+int toInt(char c)
+{
     return c - '0';
 }
 
@@ -234,34 +236,28 @@ void hidupkanSolenoid(int pin_ledeng, int durasi)
 
 /*
     Fungsi ini digunakan untuk mengatur naik turunnya servo 
-    @param modeServo    Mode "1" untuk naik dan mode "0" untuk turunv (int)
+    @param modeServo    Mode "1" untuk turun dan mode "0" untuk naik (int)
 */
 void kontrol_servo(int modeServo)
 {
-    switch (modeServo)
+    if (modeServo == 1)
     {
-    case 0:
         Serial.println("Servo turun start");
         for (pos = 75; pos <= 180; pos += 1)
         {
             servoProbe.write(pos); // tell servo to go to position in variable 'pos'
             delay(15);             // waits 15ms for the servo to reach the position
         }
-        break;
-
-    case 1:
+    }
+    else if (modeServo == 0)
+    {
         Serial.println("Servo naik start");
         for (pos = 180; pos >= 60; pos -= 1)
         {                          // goes from 180 degrees to 0 degrees
             servoProbe.write(pos); // tell servo to go to position in variable 'pos'
             delay(15);             // waits 15ms for the servo to reach the position
         }
-        break;
-    default:
-        Serial.println("TF? Bukan mode itu cuk");
-        break;
     }
-    Serial.println("Servo done");
 }
 
 float ambil_nilai_pH()
@@ -290,7 +286,7 @@ float ambil_nilai_pH()
         delay(1000);
     }
     //Hasil rata-rata
-    return (float) jumlah / 30;
+    return (float)jumlah / 30;
 }
 
 void setup()
@@ -312,6 +308,8 @@ void setup()
     pinMode(pin_pH_up, OUTPUT);
     pinMode(pin_pH_down, OUTPUT);
     pinMode(pin_sole, OUTPUT);
+    pinMode(trigLev, OUTPUT);
+    pinMode(echoLev, INPUT);
     pinMode(14, INPUT);
 
     servoProbe.attach(servo, 5);
@@ -350,8 +348,7 @@ void loop()
 
     if (strcmp(server_jam, jam) == 0 && strcmp(server_menit, menit) == 0)
     {
-
-        kontrol_servo(0);
+        kontrol_servo(1);
         Serial.println("Memulai sekuen pengukuran dan penyesuaian");
         for (int i = 0; i < 30; i++)
         {
@@ -362,13 +359,24 @@ void loop()
         Serial.println(nilai_TDS);
 
         nilai_pH = ambil_nilai_pH();
-
+        kontrol_servo(0);
         Serial.println("Done");
 
         Serial.print("Nilai TDS: ");
         Serial.print(nilai_TDS);
         Serial.print(" Nilai pH: ");
         Serial.println(nilai_pH);
+
+        dataJSON["pH"] = nilai_pH;
+        dataJSON["levelAir"] = levelAirAktual;
+        dataJSON["suhuAir"] = random(0, 100);
+        dataJSON["TDS"] = nilai_TDS;
+        serializeJson(dataJSON, data);
+        Serial.println(data);
+        publishTelemetry(data);
+        data = "";
+
+        kontrol_servo(1);
 
         Serial.println("Leveling air");
         modeSet = true;
@@ -393,15 +401,14 @@ void loop()
 
             delay(100);
 
-            if(modeSet == true)
+            if (pumpStatus == true)
                 digitalWrite(pin_sole, HIGH);
-            
-            else
-                digitalWrite(pin_sole, LOW);
 
-            Serial.println("Level Done");
-            delay(500);
-            modeSet = false;
+            else
+            {
+                digitalWrite(pin_sole, LOW);
+                modeSet = false;
+            }
         }
 
         delay(1000);
@@ -409,6 +416,7 @@ void loop()
         statusStabilisasiTDS = true;
         while (statusStabilisasiTDS == true)
         {
+            kontrol_servo(0);
             Serial.println("Stablilisasi TDS");
             if (nilai_TDS < (set_point - 50))
             {
@@ -416,13 +424,15 @@ void loop()
                 ledcWrite(0, 100);
                 delay((850));
                 ledcWrite(0, 0);
-                delay(300000); //Ganti dengan 300000ms (5 menit)
+                delay(1000); //Ganti dengan 300000ms (5 menit)
                 ledcWrite(1, 100);
                 delay((850));
                 ledcWrite(1, 0);
-                delay(300000); //Ganti dengan 300000ms (5 menit)
+                delay(1000); //Ganti dengan 300000ms (5 menit)
                 Serial.println("Penambahan Selesai");
+                kontrol_servo(0);
                 nilai_TDS = get_ppm();
+                kontrol_servo(1);
                 Serial.print("Nilai TDS: ");
                 Serial.println(nilai_TDS);
             }
@@ -438,50 +448,44 @@ void loop()
         }
 
         // Habis ini stabilisasi pH
-        Serial.println("Memulai stabilisasi pH");
-        while (statusStabilisasipH == true)
-        {
-            Serial.println("Memulai pH");
-            if (nilai_pH > ph_setpoint_atas)
-            {
-                Serial.println("Nilai pH terlalu tinggi, menurunkan");
-                //pompa(pin_pH_down, 10);
-                Serial.println("Mengunggu 5 menit");
-                delay(300000); //Tunggu 5 menit
-                Serial.println("Penurunan Selesai");
-                break;
-            }
-            else if (nilai_pH < ph_setpoint_bawah)
-            {
-                Serial.println("Nilai pH terlalu rendah, menaikan");
-                //pompa(pin_pH_up, 10);
-                Serial.println("Mengunggu 5 menit");
-                delay(300000); //Tunggu 5 menit
-                Serial.println("Selesai");
-                break;
-            }
-            else
-            {
-                Serial.println("Nilai pH sudah stabil, penyesuaian selesai");
-                statusStabilisasipH = false;
-            }
-            delay(1000);
-            statusStabilisasipH = false;
-        }
-        kontrol_servo(1);
-        dataJSON["pH"] = nilai_pH;
-        dataJSON["levelAir"] = levelAirAktual;
-        dataJSON["suhuAir"] = random(0, 100);
-        dataJSON["TDS"] = nilai_TDS;
-        serializeJson(dataJSON, data);
-        Serial.println(data);
-        publishTelemetry(data);
-        data = "";
+        // Serial.println("Memulai stabilisasi pH");
+        // while (statusStabilisasipH == true)
+        // {
+        //     Serial.println("Memulai pH");
+        //     if (nilai_pH > ph_setpoint_atas)
+        //     {
+        //         Serial.println("Nilai pH terlalu tinggi, menurunkan");
+        //         //pompa(pin_pH_down, 10);
+        //         Serial.println("Mengunggu 5 menit");
+        //         delay(300000); //Tunggu 5 menit
+        //         Serial.println("Penurunan Selesai");
+        //         break;
+        //     }
+        //     else if (nilai_pH < ph_setpoint_bawah)
+        //     {
+        //         Serial.println("Nilai pH terlalu rendah, menaikan");
+        //         //pompa(pin_pH_up, 10);
+        //         Serial.println("Mengunggu 5 menit");
+        //         delay(300000); //Tunggu 5 menit
+        //         Serial.println("Selesai");
+        //         break;
+        //     }
+        //     else
+        //     {
+        //         Serial.println("Nilai pH sudah stabil, penyesuaian selesai");
+        //         statusStabilisasipH = false;
+        //     }
+        //     delay(1000);
+        //     statusStabilisasipH = false;
+        // }
+
+        kontrol_servo(0);
         delay(1000);
         Serial.println("Selesai");
     }
 
-     if (counter >= 15){
+    if (counter >= 15)
+    {
         dataJSON["pH"] = nilai_pH;
         dataJSON["levelAir"] = levelAirAktual;
         dataJSON["suhuAir"] = random(0, 100);
@@ -491,7 +495,7 @@ void loop()
         publishTelemetry(data);
         data = "";
         counter = 0;
-     }
+    }
     delay(1000);
     counter++;
 }

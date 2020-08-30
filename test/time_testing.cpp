@@ -3,8 +3,8 @@
 
 //Test
 
-#define trigLev 2
-#define echoLev 4
+#define trigLev 12
+#define echoLev 14
 #define sole 22
 
 float kedalmanAir;
@@ -68,13 +68,13 @@ void setup()
 
     timer = timerBegin(0, 80, true);
     timerAttachInterrupt(timer, &onTimer, true);
-    timerAlarmWrite(timer, 100000, true);
+    timerAlarmWrite(timer, 5000000, true);
     timerAlarmEnable(timer);
 }
 
 void loop()
 {
-    delay(100);
+    delay(1000);
     a = getLevelAir();
 
     if (interruptCounter > 0)
@@ -105,7 +105,7 @@ void loop()
             modeSet = false;
         }
     }
-    
+
     if(modeSet == true)
         digitalWrite(sole, HIGH);
 
