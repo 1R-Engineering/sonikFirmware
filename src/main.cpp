@@ -70,9 +70,8 @@ int analogBuffer[sample_count];
 int analogBufferTemp[sample_count];
 int analogBufferIndex = 0, copyIndex = 0;
 float averageVoltage = 0, tdsValue = 0, temperature = 25;
-long nilai_TDS = 100;
-
-long nilai_pH = 1000;
+long nilai_TDS = 0;
+long nilai_pH = 0;
 const int servo = 32;
 int pos = 0;
 int modeServo;
@@ -91,8 +90,8 @@ int set_point = 1000; //Wajib diganti 0
 Servo servoProbe;
 
 char server_jam[3], server_menit[3], server_detik[3];
-char jam[] = "10";
-char menit[] = "01";
+char jam[] = "12";
+char menit[] = "27";
 
 char molas[] = "21";
 char patmo[] = "45";
@@ -405,11 +404,11 @@ void loop()
         dataJSON["pH"] = nilai_pH;
         dataJSON["levelAir"] = kedalmanAir;
         dataJSON["suhuAir"] = random(0, 100);
-        dataJSON["TDS"] = (nilai_TDS);
+        dataJSON["TDS"] = nilai_TDS;
         serializeJson(dataJSON, data);
         Serial.println(data);
         publishTelemetry(data);
-        // data = ""; removed this line, might be the culprit
+        data = ""; //removed this line, might be the culprit
 
         kontrol_servo(1);
         delay(1000);
