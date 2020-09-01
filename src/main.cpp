@@ -70,9 +70,9 @@ int analogBuffer[sample_count];
 int analogBufferTemp[sample_count];
 int analogBufferIndex = 0, copyIndex = 0;
 float averageVoltage = 0, tdsValue = 0, temperature = 25;
-float nilai_TDS = 0;
+long nilai_TDS = 100;
 
-float nilai_pH = 0;
+long nilai_pH = 1000;
 const int servo = 32;
 int pos = 0;
 int modeServo;
@@ -91,8 +91,8 @@ int set_point = 1000; //Wajib diganti 0
 Servo servoProbe;
 
 char server_jam[3], server_menit[3], server_detik[3];
-char jam[] = "08";
-char menit[] = "00";
+char jam[] = "10";
+char menit[] = "01";
 
 char molas[] = "21";
 char patmo[] = "45";
@@ -103,7 +103,7 @@ float jumlah = 0;
 // TODO: Add mqtt callback for parsing command @Hi-Peng
 unsigned long lastMillis = 0; //Penganti delay
 
-float kedalmanAir;
+long kedalmanAir;
 
 boolean modeSet;
 
@@ -349,38 +349,7 @@ void loop()
 
     if (strcmp(server_jam, jam) == 0 && strcmp(server_menit, menit) == 0)
     {
-        kontrol_servo(1);
-        Serial.println("Memulai sekuen pengukuran dan penyesuaian");
-        for (int i = 0; i < 30; i++)
-        {
-            nilai_TDS = get_ppm();
-            delay(100);
-        }
-        Serial.print("Nilai TDS: ");
-        Serial.println(nilai_TDS);
-
-        nilai_pH = ambil_nilai_pH();
-        kontrol_servo(0);
-        Serial.println("Done");
-
-        Serial.print("Nilai TDS: ");
-        Serial.print(nilai_TDS);
-        Serial.print(" Nilai pH: ");
-        Serial.println(nilai_pH);
-
-        // TODO: Iki ono masalah ning kene yake @Sopekok, @Hi-Peng #1
-        dataJSON["pH"] = nilai_pH;
-        dataJSON["levelAir"] = levelAirAktual;
-        dataJSON["suhuAir"] = random(0, 100);
-        dataJSON["TDS"] = nilai_TDS;
-        serializeJson(dataJSON, data);
-        Serial.println(data);
-        publishTelemetry(data);
-        // data = ""; removed this line, might be the culprit
-
-        kontrol_servo(1);
-
-        Serial.println("Leveling air");
+        //Leveling air
         modeSet = true;
         while (modeSet == true)
         {
@@ -413,6 +382,36 @@ void loop()
             }
         }
 
+        kontrol_servo(1);
+        Serial.println("Memulai sekuen pengukuran dan penyesuaian");
+        for (int i = 0; i < 30; i++)
+        {
+            nilai_TDS = get_ppm();
+            delay(100);
+        }
+        Serial.print("Nilai TDS: ");
+        Serial.println(nilai_TDS);
+
+        nilai_pH = ambil_nilai_pH();
+        kontrol_servo(0);
+        Serial.println("Done");
+
+        Serial.print("Nilai TDS: ");
+        Serial.print(nilai_TDS);
+        Serial.print(" Nilai pH: ");
+        Serial.println(nilai_pH);
+
+        // TODO: Iki ono masalah ning kene yake @Sopekok, @Hi-Peng #1
+        dataJSON["pH"] = nilai_pH;
+        dataJSON["levelAir"] = kedalmanAir;
+        dataJSON["suhuAir"] = random(0, 100);
+        dataJSON["TDS"] = (nilai_TDS);
+        serializeJson(dataJSON, data);
+        Serial.println(data);
+        publishTelemetry(data);
+        // data = ""; removed this line, might be the culprit
+
+        kontrol_servo(1);
         delay(1000);
         Serial.println("Mempersiapkan stabilisasi TDS");
         statusStabilisasiTDS = true;
@@ -489,13 +488,14 @@ void loop()
     if (counter >= 15)
     {
         dataJSON["pH"] = nilai_pH;
-        dataJSON["levelAir"] = levelAirAktual;
+        dataJSON["levelAir"] = kedalmanAir;
         dataJSON["suhuAir"] = random(0, 100);
         dataJSON["TDS"] = nilai_TDS;
         serializeJson(dataJSON, data);
         Serial.println(data);
         publishTelemetry(data);
         counter = 0;
+        data = "";
     }
 
     delay(1000);
