@@ -100,6 +100,7 @@ char patmo[] = "45";
 float levelAirAktual = 0;
 float jumlah = 0;
 
+// TODO: Add mqtt callback for parsing command @Hi-Peng
 unsigned long lastMillis = 0; //Penganti delay
 
 float kedalmanAir;
@@ -367,6 +368,7 @@ void loop()
         Serial.print(" Nilai pH: ");
         Serial.println(nilai_pH);
 
+        // TODO: Iki ono masalah ning kene yake @Sopekok, @Hi-Peng #1
         dataJSON["pH"] = nilai_pH;
         dataJSON["levelAir"] = levelAirAktual;
         dataJSON["suhuAir"] = random(0, 100);
@@ -374,7 +376,7 @@ void loop()
         serializeJson(dataJSON, data);
         Serial.println(data);
         publishTelemetry(data);
-        data = "";
+        // data = ""; removed this line, might be the culprit
 
         kontrol_servo(1);
 
@@ -493,9 +495,9 @@ void loop()
         serializeJson(dataJSON, data);
         Serial.println(data);
         publishTelemetry(data);
-        data = "";
         counter = 0;
     }
+
     delay(1000);
     counter++;
 }
