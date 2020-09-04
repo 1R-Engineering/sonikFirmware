@@ -20,7 +20,6 @@
 // Place your message handler code here.
 
 ///////////////////////////////
-
 // Initialize WiFi and MQTT for this board
 Client *netClient;
 CloudIoTCoreDevice *device;
@@ -43,21 +42,38 @@ String getJwt() {
   return jwt;
 }
 
-void setupWifi() {
+String terimaBL(){
+  String rawJsonBT;
+  rawJsonBT = program();
+  return rawJsonBT;
+}
+
+void setupWifi() { 
+  DynamicJsonDocument configurasiWifi(116);
+  String wifiConfig;
+  wifiConfig = terimaBL();
+
+  deserializeJson(configurasiWifi, wifiConfig);
+
+  char *ssid = configurasiWifi["ssid"];
+  char *pass = configurasiWifi["pass"];
+
   Serial.println("Starting wifi");
 
+
   WiFi.mode(WIFI_STA);
-  // WiFi.setSleep(false); // May help with disconnect? Seems to have been removed from WiFi
-  WiFi.begin(ssid, password);
+  WiFi.begin(ssid, pass);
   Serial.println("Connecting to WiFi");
-  // while (WiFi.status() != WL_CONNECTED) {
-  //   // digitalWrite(LEDWIFICON, LOW);
-  //   // delay(50);
-  //   // digitalWrite(LEDWIFICON, HIGH);
-  //   // delay(50);
-  // }
+
+  while (WiFi.status() != WL_CONNECTED) {
+    digitalWrite(LEDWIFICON, LOW);
+    delay(50);
+    digitalWrite(LEDWIFICON, HIGH);
+    delay(50);
+  }
 
   configTime(25200, 0, ntp_primary, ntp_secondary);
+
   Serial.println("Waiting on time sync...");
   while (time(nullptr) < 1510644967) {
     delay(10);
@@ -94,7 +110,7 @@ bool publishTelemetry(String subfolder, const char* data, int length) {
 void connect() {
   connectWifi();
   mqtt->mqttConnect();
-  // digitalWrite(13, HIGH);
+  digitalWrite(13, HIGH);
 }
 
 void setupCloudIoT() {

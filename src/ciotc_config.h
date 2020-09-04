@@ -1,5 +1,4 @@
-const char *ssid = "bequiet!";
-const char *password = "Basoka123";
+
 
 const char *project_id = "sonikiot";
 const char *location = "asia-east1";
@@ -44,6 +43,6 @@ const char *root_cert =
     "USpxu6x6td0V7SvJCCosirSmIatj/9dSSVDQibet8q/7UK4v4ZUN80atnZz1yg==\n"
     "-----END CERTIFICATE-----\n";
 
-// In case we ever need extra topics
+
 const int ex_num_topics = 0;
 const char* ex_topics[ex_num_topics];

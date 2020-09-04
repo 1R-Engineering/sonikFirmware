@@ -91,7 +91,7 @@ int set_point = 1000; //Wajib diganti 0
 Servo servoProbe;
 
 char server_jam[3], server_menit[3], server_detik[3];
-char jam[] = "08";
+char jam[] = "09";
 char menit[] = "00";
 
 char molas[] = "21";
@@ -299,10 +299,10 @@ void setup()
     ledcSetup(2, 1000, 8);
     ledcSetup(3, 1000, 8);
 
-    ledcAttachPin(pompa_mix_a, 0); //Pompa B
-    ledcAttachPin(pompa_mix_b, 1); //Pompa B
-    ledcAttachPin(pin_pH_down, 2); //Pompa B
-    ledcAttachPin(pin_pH_up, 3);   //Pompa B
+    ledcAttachPin(pompa_mix_a, 0); // Pompa A
+    ledcAttachPin(pompa_mix_b, 1); // Pompa B
+    ledcAttachPin(pin_pH_down, 2); // Pompa Down
+    ledcAttachPin(pin_pH_up, 3);   // Pompa Up
 
     pinMode(pompa_mix_a, OUTPUT);
     pinMode(pompa_mix_b, OUTPUT);
@@ -323,6 +323,7 @@ void setup()
 void loop()
 {
     DynamicJsonDocument dataJSON(200);
+
     mqttClient->loop();
 
     if (!mqttClient->connected())
@@ -330,7 +331,7 @@ void loop()
         connect();
     }
 
-    Serial.println("MAIN LOOP");
+    Serial.println("MAIN LOOP");    
     struct tm timeinfo;
     strftime(server_detik, 3, "%S", &timeinfo);
     strftime(server_menit, 3, "%M", &timeinfo);
@@ -347,10 +348,14 @@ void loop()
     Serial.print("  ");
     Serial.println(server_detik);
 
-    if (strcmp(server_jam, jam) == 0 && strcmp(server_menit, menit) == 0)
+    //Ngechek data
+    if ((strcmp(server_jam, jam) == 0 && strcmp(server_menit, menit) == 0))
     {
         kontrol_servo(1);
+
         Serial.println("Memulai sekuen pengukuran dan penyesuaian");
+
+        //Mengukur ppm dan pH
         for (int i = 0; i < 30; i++)
         {
             nilai_TDS = get_ppm();
@@ -360,15 +365,18 @@ void loop()
         Serial.println(nilai_TDS);
 
         nilai_pH = ambil_nilai_pH();
+
         kontrol_servo(0);
+
         Serial.println("Done");
 
         Serial.print("Nilai TDS: ");
         Serial.print(nilai_TDS);
         Serial.print(" Nilai pH: ");
         Serial.println(nilai_pH);
+        // Selesai mengukur ppm dan pH
 
-        // TODO: Iki ono masalah ning kene yake @Sopekok, @Hi-Peng #1
+        //Mengirimkan hasil pengukuran sementara ke internet
         dataJSON["pH"] = nilai_pH;
         dataJSON["levelAir"] = levelAirAktual;
         dataJSON["suhuAir"] = random(0, 100);
@@ -376,10 +384,11 @@ void loop()
         serializeJson(dataJSON, data);
         Serial.println(data);
         publishTelemetry(data);
-        // data = ""; removed this line, might be the culprit
+        //Selesai mengirim data
 
         kontrol_servo(1);
 
+        // Memulai penyetaraan permukaan air
         Serial.println("Leveling air");
         modeSet = true;
         while (modeSet == true)
@@ -387,6 +396,7 @@ void loop()
             delay(100);
             levelAirAktual = getLevelAir();
             boolean pumpStatus;
+
             if (levelAirAktual > 7)
             {
                 Serial.print("Menghidupkan solenoid, ketinggian air: ");
@@ -412,38 +422,50 @@ void loop()
                 modeSet = false;
             }
         }
+        //Selesai peratan permukaan air
 
         delay(1000);
+
         Serial.println("Mempersiapkan stabilisasi TDS");
         statusStabilisasiTDS = true;
         while (statusStabilisasiTDS == true)
         {
             kontrol_servo(0);
+
             Serial.println("Stablilisasi TDS");
             if (nilai_TDS < (set_point - 50))
             {
                 Serial.println("TDS Kurang, akan ditambahkan");
+
                 ledcWrite(0, 100);
-                delay((850));
+                delay((850));   // Sak tutup botol
                 ledcWrite(0, 0);
-                delay(1000); //Ganti dengan 300000ms (5 menit)
+
+                delay(300000); //Ganti dengan 300000ms (5 menit)
+
                 ledcWrite(1, 100);
                 delay((850));
                 ledcWrite(1, 0);
-                delay(1000); //Ganti dengan 300000ms (5 menit)
+
+                delay(300000); //Ganti dengan 300000ms (5 menit)
+
                 Serial.println("Penambahan Selesai");
-                kontrol_servo(0);
-                nilai_TDS = get_ppm();
+
                 kontrol_servo(1);
+                nilai_TDS = get_ppm();
+                kontrol_servo(0);
+
                 Serial.print("Nilai TDS: ");
                 Serial.println(nilai_TDS);
             }
+
             else
             {
                 Serial.print("TDS Sudah stabil di nilai: ");
                 Serial.println(nilai_TDS);
                 statusStabilisasiTDS = false;
             }
+            
             delay(1000);
             statusStabilisasiTDS = false;
             Serial.println("Selesai TDS");
@@ -486,7 +508,9 @@ void loop()
         Serial.println("Selesai");
     }
 
-    if (counter >= 15)
+    //Update data tiap waktu
+    // TODO: tambah sensor lainnya @Sopekok
+    if (counter >= 300)
     {
         dataJSON["pH"] = nilai_pH;
         dataJSON["levelAir"] = levelAirAktual;
@@ -495,6 +519,7 @@ void loop()
         serializeJson(dataJSON, data);
         Serial.println(data);
         publishTelemetry(data);
+
         counter = 0;
     }
 
