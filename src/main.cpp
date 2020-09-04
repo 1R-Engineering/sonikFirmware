@@ -70,9 +70,8 @@ int analogBuffer[sample_count];
 int analogBufferTemp[sample_count];
 int analogBufferIndex = 0, copyIndex = 0;
 float averageVoltage = 0, tdsValue = 0, temperature = 25;
-float nilai_TDS = 0;
-
-float nilai_pH = 0;
+long nilai_TDS = 0;
+long nilai_pH = 0;
 const int servo = 32;
 int pos = 0;
 int modeServo;
@@ -103,7 +102,7 @@ float jumlah = 0;
 // TODO: Add mqtt callback for parsing command @Hi-Peng
 unsigned long lastMillis = 0; //Penganti delay
 
-float kedalmanAir;
+long kedalmanAir;
 
 boolean modeSet;
 
@@ -424,6 +423,36 @@ void loop()
         }
         //Selesai peratan permukaan air
 
+        kontrol_servo(1);
+        Serial.println("Memulai sekuen pengukuran dan penyesuaian");
+        for (int i = 0; i < 30; i++)
+        {
+            nilai_TDS = get_ppm();
+            delay(100);
+        }
+        Serial.print("Nilai TDS: ");
+        Serial.println(nilai_TDS);
+
+        nilai_pH = ambil_nilai_pH();
+        kontrol_servo(0);
+        Serial.println("Done");
+
+        Serial.print("Nilai TDS: ");
+        Serial.print(nilai_TDS);
+        Serial.print(" Nilai pH: ");
+        Serial.println(nilai_pH);
+
+        // TODO: Iki ono masalah ning kene yake @Sopekok, @Hi-Peng #1
+        dataJSON["pH"] = nilai_pH;
+        dataJSON["levelAir"] = kedalmanAir;
+        dataJSON["suhuAir"] = random(0, 100);
+        dataJSON["TDS"] = nilai_TDS;
+        serializeJson(dataJSON, data);
+        Serial.println(data);
+        publishTelemetry(data);
+        data = ""; //removed this line, might be the culprit
+
+        kontrol_servo(1);
         delay(1000);
 
         Serial.println("Mempersiapkan stabilisasi TDS");
@@ -513,7 +542,7 @@ void loop()
     if (counter >= 300)
     {
         dataJSON["pH"] = nilai_pH;
-        dataJSON["levelAir"] = levelAirAktual;
+        dataJSON["levelAir"] = kedalmanAir;
         dataJSON["suhuAir"] = random(0, 100);
         dataJSON["TDS"] = nilai_TDS;
         serializeJson(dataJSON, data);
@@ -521,6 +550,7 @@ void loop()
         publishTelemetry(data);
 
         counter = 0;
+        data = "";
     }
 
     delay(1000);
