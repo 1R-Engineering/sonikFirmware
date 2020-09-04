@@ -44,293 +44,126 @@
 #include <ArduinoJson.h>
 #include "WiFi.h"
 #include "esp32-mqtt.h"
-#include "BluetoothSerial.h"
-#include <ESP32Servo.h>
+// #include "BluetoothSerial.h"
+#include <Servo.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
-//Inisialisasi pin gpio mikrokontroller
-#define TX_0 GPIO_NUM_1  // Pin untuk komunikasi antar board
-#define RX_0 GPIO_NUM_3  // Pin untuk komunikasi antar board
-#define TX_2 GPIO_NUM_17 // Pin untuk komunikasi antar board
-#define RX_2 GPIO_NUM_16 // Pin untuk komunikasi antar board
-#define pompamixA 26     // Pin pompa larutan A
-#define pompamixB 27     // Pin pompa larutan B
-#define pompaAcid 25     // Pin pompa larutan Asam
-#define pompaBase 33     // Pin pompa larutan Basa
-#define solenoid 22      // Pin solenoid
-#define pumpAC 21        // Pin pompa AC (tapi rasido kan
-#define pin_ds_temp 13   // Pin sensor temperatur air dengan DS
-#define pin_sensor_pH 12 // Pin sensor sensor pH
-#define TDSSensorPin 14  // Pin sensor TDS
-#define echoLev 4        // Pin echo Ultrasonik
-#define trigLev 2        // Pin trigger Ultrasonik
-#define pin_servo 32
-#define TdsSensorPin 14
+#define pin_ds_temp 13
+#define pin_tds GPIO_NUM_39
+#define pin_sensor_pH GPIO_NUM_36
+#define sample_count 30
 #define VREF 3.3
-#define SCOUNT 30
 
-float nilai_test, set_point, ph_setpoint_atas,
-    ph_setpoint_bawah, nilai_ph;
+#define pompa_mix_a 26
+#define pompa_mix_b 27
+#define pin_sole 22
+#define pin_pH_down 33
+#define pin_pH_up 25
 
-//Nama device
-char namaDevice[] = "Sonik32";
-
-//Inisialisasi klas untuk komunikasi Serial
-HardwareSerial Sender(1);
-HardwareSerial Receiver(2);
-
-//Deklarasi variabel
-#define pubDelay 10000 // Waktu interval pengiriman data telemetri ke cloud (15 menit)
-
-//Deklarasi dari tool penting (lib)
-OneWire oneWire(pin_ds_temp);
-DallasTemperature sensors(&oneWire);
-Servo servoProbe;
-int pos = 0;
-
-unsigned long lastMillis = 0;    //Penganti delay
-unsigned long lastMillisTDS = 0; //Penganti delay
-
-boolean statusStabilisasipH = true;
-boolean statusStabilisasiTDS = true;
+#define trigLev 12
+#define echoLev 14
 
 String data; //Variabel yang menyimpan data yang akan dikirim
 
-bool bluetoothConStatus = false; //Status koneksi Bluetooth, apabila sudah terkoneksi maka ini akan true
+int analogBuffer[sample_count];
+int analogBufferTemp[sample_count];
+int analogBufferIndex = 0, copyIndex = 0;
+float averageVoltage = 0, tdsValue = 0, temperature = 25;
+long nilai_TDS = 0;
+long nilai_pH = 0;
+const int servo = 32;
+int pos = 0;
+int modeServo;
 
-//Variabel penyimpan string ssid dan password wifi
-String ssidPrim, passPrim; //Menyimpan variabel ssid dari wifi
+float ph_setpoint_bawah = 5.5;
+float ph_setpoint_atas = 6.5;
+
+OneWire oneWire(pin_ds_temp);
+DallasTemperature sensors(&oneWire);
+
+boolean statusStabilisasiTDS = true;
+boolean statusStabilisasipH = true;
+
+int set_point = 1000; //Wajib diganti 0
+
+Servo servoProbe;
+
 char server_jam[3], server_menit[3], server_detik[3];
 char jam[] = "09";
 char menit[] = "00";
-char cmd[] = "test";
-/*
-    Inisialisasi bluetooth yang nantinya akan digunakan
-    untuk mengambil pengaturan wifi dari android (hp user)
-*/
-BluetoothSerial SerialBT;
 
-int analogBuffer[SCOUNT]; // store the analog value in the array, read from ADC
-int analogBufferTemp[SCOUNT];
-int analogBufferIndex = 0, copyIndex = 0;
-float averageVoltage = 0, tdsValue = 0, temperature = 25;
-float nilai_TDS = 0;
+char molas[] = "21";
+char patmo[] = "45";
 
-int getMedianNum(int bArray[], int iFilterLen);
-float ambil_nilai_pH(int pin_pH, int banyak_sample_pH);
-float ambil_nilai_TDS();
-float getLevelAir();
-void pompa(int pinPompa, int miliLiter);
-void hidupkanSolenoid(int pin_ledeng, int durasi);
-void kontrol_servo(int modeServo);
+float levelAirAktual = 0;
+float jumlah = 0;
+
+// TODO: Add mqtt callback for parsing command @Hi-Peng
+unsigned long lastMillis = 0; //Penganti delay
+
+long kedalmanAir;
+
+boolean modeSet;
+
+int counter = 0;
 
 void messageReceived(String &topic, String &payload)
 {
     Serial.println("incoming: " + topic + " - " + payload);
-    // char payloadBuffer(payload.length());
-    // payload.toCharArray(payloadBuffer, payload.length());
 }
 
-void setup()
+int toInt(char c)
 {
-    //Setting up komunikasi 2 esp dengan protokol serial
-    Sender.begin(115200, SERIAL_8N1, RX_0, TX_0);
-    Receiver.begin(115200, SERIAL_8N1, RX_2, TX_2);
-
-    pinMode(TDSSensorPin, INPUT);
-
-    //Setup pwm pompa
-    ledcSetup(0, 3000, 8);
-    ledcAttachPin(pompamixA, 0);
-    ledcAttachPin(pompamixB, 0);
-    ledcAttachPin(pompaAcid, 0);
-    ledcAttachPin(pompaBase, 0);
-
-    //Setting up komunikasi serial dengan usb (untuk debug)
-    Serial.begin(115200);
-    Serial.println("SONIK Init");
-
-    ESP32PWM::allocateTimer(0);
-    ESP32PWM::allocateTimer(1);
-    ESP32PWM::allocateTimer(2);
-    ESP32PWM::allocateTimer(3);
-    servoProbe.setPeriodHertz(50); // standard 50 hz servo
-    servoProbe.attach(pin_servo, 1000, 2000);
-
-    pinMode(solenoid, OUTPUT);
-    pinMode(trigLev, OUTPUT);
-    pinMode(echoLev, INPUT);
-
-    sensors.begin();
-
-    setupCloudIoT();
+    return c - '0';
 }
 
-void loop()
+float getLevelAir()
 {
-    DynamicJsonDocument jsonSensor(200);
-    mqttClient->loop();
-    struct tm timeinfo;
-    strftime(server_detik, 3, "%S", &timeinfo);
-    strftime(server_menit, 3, "%M", &timeinfo);
-    strftime(server_jam, 3, "%H", &timeinfo);
-
-    if (!mqttClient->connected())
-    {
-        connect();
-    }
-
-    if (!getLocalTime(&timeinfo))
-    {
-        Serial.println("Failed to obtain time");
-    }
-
-    //Keperluan debug sensor
-    if (millis() - lastMillis > pubDelay)
-    {
-        lastMillis = millis();
-
-        // nilai_TDS = ambil_nilai_TDS();
-        Serial.print(server_jam);
-        Serial.print(" ");
-        Serial.print(server_menit);
-        Serial.print(" ");
-        Serial.println(server_detik);
-
-        /*
-            Setiap jam 9 pagi akan dilakukan
-        */
-        if ((strcmp(server_jam, jam) == 0 && strcmp(server_menit, menit) == 0))
-        {
-            /*
-                Disini jalankan pengecekan tds dan ph
-            */
-
-            Serial.println("cek/stabilke");
-            data = "";
-            Serial.println("Servo turun start");
-            for (pos = 75; pos <= 180; pos += 1)
-            {
-                servoProbe.write(pos); // tell servo to go to position in variable 'pos'
-                delay(15);             // waits 15ms for the servo to reach the position
-            }
-            
-            //jalankan fungsi pengecekan
-            kontrol_servo(0);
-
-            nilai_ph = ambil_nilai_pH(pin_sensor_pH, 30); //Menjalankan test dengan 30 sample (30 detik)
-            nilai_TDS = ambil_nilai_TDS();
-
-            Serial.print("Nilai TDS: ");
-            Serial.print(nilai_TDS);
-            Serial.print("\t||\t");
-            Serial.print("Nilai pH: ");
-            Serial.println(nilai_ph);
-
-            while (statusStabilisasiTDS == true)
-            {
-                if (nilai_TDS < (set_point - 50))
-                {
-                    Serial.println("TDS Kurang, akan ditambahkan");
-                    pompa(pompamixA, 5);
-                    delay(300000); //Ganti dengan 300000ms (5 menit)
-                    pompa(pompamixB, 5);
-                    delay(300000); //Ganti dengan 300000ms (5 menit)
-                    nilai_TDS = ambil_nilai_TDS();
-                    Serial.println("Penambahan Selesai");
-                }
-
-                //Rasido tambah banyu
-                // else if (nilai_TDS > (set_point + 50))
-                // {
-                //     Serial.println("TDS Kelebihan, akan dikurang");
-                //     hidupkanSolenoid(solenoid, 500);
-                //     delay(300000); //Delay 5 min
-                //     nilai_TDS = ambil_nilai_TDS();
-                //     Serial.println("Pengurangan Selesai");
-                // }
-
-                else
-                {
-                    Serial.print("TDS Sudah stabil di nilai: ");
-                    Serial.println(nilai_TDS);
-                    statusStabilisasiTDS = false;
-                }
-            }
-
-            //Habis ini stabilisasi pH
-            while (statusStabilisasipH == true)
-            {
-                if (nilai_ph > ph_setpoint_atas)
-                {
-                    Serial.println("Nilai pH terlalu tinggi, menurunkan");
-                    pompa(pompaAcid, 10);
-                    Serial.println("Mengunggu 5 menit");
-                    delay(10); //Tunggu 5 menit
-                    nilai_ph = ambil_nilai_pH(pin_sensor_pH, 30);
-                    Serial.println("Penurunan Selesai");
-                }
-                else if (nilai_ph < ph_setpoint_bawah)
-                {
-                    Serial.println("Nilai pH terlalu rendah, menaikan");
-                    pompa(pompaBase, 10);
-                    Serial.println("Mengunggu 5 menit");
-                    delay(10); //Tunggu 5 menit
-                    nilai_ph = ambil_nilai_pH(pin_sensor_pH, 30);
-                    Serial.println("Selesai");
-                }
-                else
-                {
-                    Serial.println("Nilai pH sudah stabil, penyesuaian selesai");
-                    statusStabilisasipH = false;
-                }
-            }
-            delay(5000); //Delay diluk
-            jsonSensor["pH"] = nilai_ph;
-            jsonSensor["TDS"] = nilai_TDS;
-            jsonSensor["suhuAir"] = random(0, 100);
-            jsonSensor["levelAir"] = getLevelAir();
-            serializeJson(jsonSensor, data);
-            Serial.println(data);
-            publishTelemetry(data);
-            data = "";
-            kontrol_servo(1); //Servo naik
-        }
-        else
-        {
-            Serial.println("rung wayaje");
-        }
-        jsonSensor["levelAir"] = getLevelAir();
-        serializeJson(jsonSensor, data);
-        Serial.println(data);
-        publishTelemetry(data);
-        data = "";
-    }
+    float kedalaman;
+    long durasiPantul;
+    digitalWrite(trigLev, LOW);
+    delayMicroseconds(2);
+    digitalWrite(trigLev, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigLev, LOW);
+    durasiPantul = (pulseIn(echoLev, HIGH));
+    kedalaman = durasiPantul * 0.034 / 2;
+    return kedalaman;
 }
 
-float ambil_nilai_TDS()
+float rataAir()
 {
-    static unsigned long analogSampleTimepoint = millis();
-    if (millis() - analogSampleTimepoint > 40U) //every 40 milliseconds,read the analog value from the ADC
+    float tempKedalaman[10];
+    for (int i = 0; i < 10; i++)
     {
-        analogSampleTimepoint = millis();
-        analogBuffer[analogBufferIndex] = analogRead(TdsSensorPin); //read the analog value and store into the buffer
-        analogBufferIndex++;
-        if (analogBufferIndex == SCOUNT)
-            analogBufferIndex = 0;
+        tempKedalaman[i] = 0;
     }
-    static unsigned long printTimepoint = millis();
-    if (millis() - printTimepoint > 800U)
-    {
-        printTimepoint = millis();
-        for (copyIndex = 0; copyIndex < SCOUNT; copyIndex++)
-            analogBufferTemp[copyIndex] = analogBuffer[copyIndex];
-        averageVoltage = getMedianNum(analogBufferTemp, SCOUNT) * (float)VREF / 1024.0;
-        float compensationCoefficient = 1.0 + 0.02 * (temperature - 25.0);
-        float compensationVolatge = averageVoltage / compensationCoefficient;
-        tdsValue = (133.42 * compensationVolatge * compensationVolatge * compensationVolatge - 255.86 * compensationVolatge * compensationVolatge + 857.39 * compensationVolatge) * 0.5; //convert voltage value to tds value
 
-        return tdsValue;
+    for (int i = 0; i < 10; i++)
+    {
+        tempKedalaman[i] = getLevelAir();
+        jumlah = jumlah + tempKedalaman[i];
+        Serial.print("Mengambil nilai jarak dengan nilai: ");
+        Serial.println(tempKedalaman[i]);
+        delay(10);
     }
+    return jumlah / 10;
+}
+
+/*
+    Fungsi untuk mengeluarkan carian dari 
+    @param channel_pompa    pin output yang digunakan untuk mengeluarkan cairan (int)
+            mililiter    banyaknya cairan yang dikeluarkan dalam mL (int)
+*/
+void pompa(int channel_pompa, int mililiter)
+{
+    Serial.print("Menghidupkan pompa dan mengeluarkan air");
+    Serial.println(mililiter);
+    ledcWrite(channel_pompa, 50);
+    delay((40 * mililiter));
+    ledcWrite(channel_pompa, 0);
+    Serial.println("Pompa selesai");
 }
 
 int getMedianNum(int bArray[], int iFilterLen)
@@ -358,60 +191,30 @@ int getMedianNum(int bArray[], int iFilterLen)
     return bTemp;
 }
 
-/*Fungsi untuk mengambil nilai kedalaman air (level air)*/
-float getLevelAir()
+float get_ppm()
 {
-    float kedalaman;
-    long durasiPantul;
-    digitalWrite(trigLev, LOW);
-    delayMicroseconds(2);
-    digitalWrite(trigLev, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(trigLev, LOW);
-    durasiPantul = (pulseIn(echoLev, HIGH));
-    kedalaman = durasiPantul * 0.034 / 2;
-    return kedalaman;
-}
-
-/*
-    @brief Fungsi untuk mengeluarkan air sebanyak n milii
-    @param pin_Pompa   Pin kontrol solenoid 
-    @param durasi    Durasi penghidupan solenoid
-    @return void
-*/
-void pompa(int pin_Pompa, int miliLiter)
-{
-    ledcWrite(pin_Pompa, 50);
-    delay(40 * miliLiter);
-    ledcWrite(pin_Pompa, 0);
-}
-
-/*
-    @brief Fungsi untuk mengambil pH
-    @param pin_pH   Pin masukan pH 
-    @param banyak_sample_pH Banyaknya sampel yang diambil (1 sample berdurasi 1 detik)
-    @return Nilai rata-rata pH (float)
-*/
-float ambil_nilai_pH(int pin_pH, int banyak_sample_pH)
-{
-    float jumlah = 0;
-    float Po[banyak_sample_pH];
-    //Mengosongkan nilai ph
-    for (size_t i = 0; i < banyak_sample_pH; i++)
+    static unsigned long analogSampleTimepoint = millis();
+    if (millis() - analogSampleTimepoint > 40U) //every 40 milliseconds,read the analog value from the ADC
     {
-        Po[i] = 0;
+        analogSampleTimepoint = millis();
+        analogBuffer[analogBufferIndex] = analogRead(pin_tds); //read the analog value and store into the buffer
+        Serial.println(analogBuffer[analogBufferIndex]);
+        analogBufferIndex++;
+        if (analogBufferIndex == sample_count)
+            analogBufferIndex = 0;
     }
-    //Mengambil data dan menjumlah
-    for (int i = 0; i < banyak_sample_pH; i++)
+    static unsigned long printTimepoint = millis();
+    if (millis() - printTimepoint > 800U)
     {
-        float nilaiPengukuranPh = analogRead(pin_sensor_pH);
-        float TeganganPh = 3.3 / 4096.0 * nilaiPengukuranPh;
-        Po[i] = 7.00 + ((2.44 - TeganganPh) / 0.18);
-        jumlah = jumlah + Po[i];
-        delay(1000);
+        printTimepoint = millis();
+        for (copyIndex = 0; copyIndex < sample_count; copyIndex++)
+            analogBufferTemp[copyIndex] = analogBuffer[copyIndex];
+        averageVoltage = getMedianNum(analogBufferTemp, sample_count) * (float)VREF / 4096.0;                                                                                            // read the analog value more stable by the median filtering algorithm, and convert to voltage value
+        float compensationCoefficient = 1.0 + 0.02 * (temperature - 25.0);                                                                                                               //temperature compensation formula: fFinalResult(25^C) = fFinalResult(current)/(1.0+0.02*(fTP-25.0));
+        float compensationVolatge = averageVoltage / compensationCoefficient;                                                                                                            //temperature compensation
+        tdsValue = (133.42 * compensationVolatge * compensationVolatge * compensationVolatge - 255.86 * compensationVolatge * compensationVolatge + 857.39 * compensationVolatge) * 0.5; //convert voltage value to tds value
+        return tdsValue;
     }
-    //Hasil rata-rata
-    return (float)jumlah / banyak_sample_pH;
 }
 
 /*
@@ -433,33 +236,323 @@ void hidupkanSolenoid(int pin_ledeng, int durasi)
 
 /*
     Fungsi ini digunakan untuk mengatur naik turunnya servo 
-    @param modeServo    Mode "1" untuk naik dan mode "0" untuk turunv (int)
+    @param modeServo    Mode "1" untuk turun dan mode "0" untuk naik (int)
 */
 void kontrol_servo(int modeServo)
 {
-    switch (modeServo)
+    if (modeServo == 1)
     {
-    case 0:
         Serial.println("Servo turun start");
         for (pos = 75; pos <= 180; pos += 1)
         {
             servoProbe.write(pos); // tell servo to go to position in variable 'pos'
             delay(15);             // waits 15ms for the servo to reach the position
         }
-
-        break;
-    case 1:
+    }
+    else if (modeServo == 0)
+    {
         Serial.println("Servo naik start");
-        for (pos = 180; pos >= 75; pos -= 1)
+        for (pos = 180; pos >= 60; pos -= 1)
         {                          // goes from 180 degrees to 0 degrees
             servoProbe.write(pos); // tell servo to go to position in variable 'pos'
             delay(15);             // waits 15ms for the servo to reach the position
         }
-        break;
-    default:
-        Serial.println("TF? Bukan mode itu cuk");
-        break;
+    }
+}
+
+float ambil_nilai_pH()
+{
+    float jumlah = 0;
+    float Po[30];
+    //Mengosongkan nilai ph
+    for (size_t i = 0; i < 30; i++)
+    {
+        Po[i] = 0;
     }
 
-    Serial.println("Servo done");
+    //Mengambil data dan menjumlah
+    for (int i = 0; i < 30; i++)
+    {
+        float nilaiPengukuranPh = analogRead(pin_sensor_pH);
+        float TeganganPh = 3.3 / 4095.0 * nilaiPengukuranPh;
+        Po[i] = 7.00 + ((1.65 - TeganganPh) / 0.17);
+        jumlah = jumlah + Po[i];
+        Serial.print("NIlai pembacaan raw pH: ");
+        Serial.print(Po[i]);
+        Serial.print("|| Nilai pembacaan analog: ");
+        Serial.print(nilaiPengukuranPh);
+        Serial.print("||Pembacaan voltage");
+        Serial.println(TeganganPh);
+        delay(1000);
+    }
+    //Hasil rata-rata
+    return (float)jumlah / 30;
+}
+
+void setup()
+{
+    Serial.begin(115200);
+
+    ledcSetup(0, 1000, 8);
+    ledcSetup(1, 1000, 8);
+    ledcSetup(2, 1000, 8);
+    ledcSetup(3, 1000, 8);
+
+    ledcAttachPin(pompa_mix_a, 0); // Pompa A
+    ledcAttachPin(pompa_mix_b, 1); // Pompa B
+    ledcAttachPin(pin_pH_down, 2); // Pompa Down
+    ledcAttachPin(pin_pH_up, 3);   // Pompa Up
+
+    pinMode(pompa_mix_a, OUTPUT);
+    pinMode(pompa_mix_b, OUTPUT);
+    pinMode(pin_pH_up, OUTPUT);
+    pinMode(pin_pH_down, OUTPUT);
+    pinMode(pin_sole, OUTPUT);
+    pinMode(trigLev, OUTPUT);
+    pinMode(echoLev, INPUT);
+    pinMode(14, INPUT);
+
+    servoProbe.attach(servo, 5);
+
+    Serial.println("Starting device");
+
+    setupCloudIoT();
+}
+
+void loop()
+{
+    DynamicJsonDocument dataJSON(200);
+
+    mqttClient->loop();
+
+    if (!mqttClient->connected())
+    {
+        connect();
+    }
+
+    Serial.println("MAIN LOOP");    
+    struct tm timeinfo;
+    strftime(server_detik, 3, "%S", &timeinfo);
+    strftime(server_menit, 3, "%M", &timeinfo);
+    strftime(server_jam, 3, "%H", &timeinfo);
+
+    if (!getLocalTime(&timeinfo))
+    {
+        Serial.println("Failed to obtain time");
+    }
+
+    Serial.print(server_jam);
+    Serial.print("  ");
+    Serial.print(server_menit);
+    Serial.print("  ");
+    Serial.println(server_detik);
+
+    //Ngechek data
+    if ((strcmp(server_jam, jam) == 0 && strcmp(server_menit, menit) == 0))
+    {
+        kontrol_servo(1);
+
+        Serial.println("Memulai sekuen pengukuran dan penyesuaian");
+
+        //Mengukur ppm dan pH
+        for (int i = 0; i < 30; i++)
+        {
+            nilai_TDS = get_ppm();
+            delay(100);
+        }
+        Serial.print("Nilai TDS: ");
+        Serial.println(nilai_TDS);
+
+        nilai_pH = ambil_nilai_pH();
+
+        kontrol_servo(0);
+
+        Serial.println("Done");
+
+        Serial.print("Nilai TDS: ");
+        Serial.print(nilai_TDS);
+        Serial.print(" Nilai pH: ");
+        Serial.println(nilai_pH);
+        // Selesai mengukur ppm dan pH
+
+        //Mengirimkan hasil pengukuran sementara ke internet
+        dataJSON["pH"] = nilai_pH;
+        dataJSON["levelAir"] = levelAirAktual;
+        dataJSON["suhuAir"] = random(0, 100);
+        dataJSON["TDS"] = nilai_TDS;
+        serializeJson(dataJSON, data);
+        Serial.println(data);
+        publishTelemetry(data);
+        //Selesai mengirim data
+
+        kontrol_servo(1);
+
+        // Memulai penyetaraan permukaan air
+        Serial.println("Leveling air");
+        modeSet = true;
+        while (modeSet == true)
+        {
+            delay(100);
+            levelAirAktual = getLevelAir();
+            boolean pumpStatus;
+
+            if (levelAirAktual > 7)
+            {
+                Serial.print("Menghidupkan solenoid, ketinggian air: ");
+                Serial.println(levelAirAktual);
+                pumpStatus = true;
+            }
+
+            else
+            {
+                Serial.print("Sudah pas di: ");
+                Serial.println(levelAirAktual);
+                pumpStatus = false;
+            }
+
+            delay(100);
+
+            if (pumpStatus == true)
+                digitalWrite(pin_sole, HIGH);
+
+            else
+            {
+                digitalWrite(pin_sole, LOW);
+                modeSet = false;
+            }
+        }
+        //Selesai peratan permukaan air
+
+        kontrol_servo(1);
+        Serial.println("Memulai sekuen pengukuran dan penyesuaian");
+        for (int i = 0; i < 30; i++)
+        {
+            nilai_TDS = get_ppm();
+            delay(100);
+        }
+        Serial.print("Nilai TDS: ");
+        Serial.println(nilai_TDS);
+
+        nilai_pH = ambil_nilai_pH();
+        kontrol_servo(0);
+        Serial.println("Done");
+
+        Serial.print("Nilai TDS: ");
+        Serial.print(nilai_TDS);
+        Serial.print(" Nilai pH: ");
+        Serial.println(nilai_pH);
+
+        // TODO: Iki ono masalah ning kene yake @Sopekok, @Hi-Peng #1
+        dataJSON["pH"] = nilai_pH;
+        dataJSON["levelAir"] = kedalmanAir;
+        dataJSON["suhuAir"] = random(0, 100);
+        dataJSON["TDS"] = nilai_TDS;
+        serializeJson(dataJSON, data);
+        Serial.println(data);
+        publishTelemetry(data);
+        data = ""; //removed this line, might be the culprit
+
+        kontrol_servo(1);
+        delay(1000);
+
+        Serial.println("Mempersiapkan stabilisasi TDS");
+        statusStabilisasiTDS = true;
+        while (statusStabilisasiTDS == true)
+        {
+            kontrol_servo(0);
+
+            Serial.println("Stablilisasi TDS");
+            if (nilai_TDS < (set_point - 50))
+            {
+                Serial.println("TDS Kurang, akan ditambahkan");
+
+                ledcWrite(0, 100);
+                delay((850));   // Sak tutup botol
+                ledcWrite(0, 0);
+
+                delay(300000); //Ganti dengan 300000ms (5 menit)
+
+                ledcWrite(1, 100);
+                delay((850));
+                ledcWrite(1, 0);
+
+                delay(300000); //Ganti dengan 300000ms (5 menit)
+
+                Serial.println("Penambahan Selesai");
+
+                kontrol_servo(1);
+                nilai_TDS = get_ppm();
+                kontrol_servo(0);
+
+                Serial.print("Nilai TDS: ");
+                Serial.println(nilai_TDS);
+            }
+
+            else
+            {
+                Serial.print("TDS Sudah stabil di nilai: ");
+                Serial.println(nilai_TDS);
+                statusStabilisasiTDS = false;
+            }
+            
+            delay(1000);
+            statusStabilisasiTDS = false;
+            Serial.println("Selesai TDS");
+        }
+
+        // Habis ini stabilisasi pH
+        // Serial.println("Memulai stabilisasi pH");
+        // while (statusStabilisasipH == true)
+        // {
+        //     Serial.println("Memulai pH");
+        //     if (nilai_pH > ph_setpoint_atas)
+        //     {
+        //         Serial.println("Nilai pH terlalu tinggi, menurunkan");
+        //         //pompa(pin_pH_down, 10);
+        //         Serial.println("Mengunggu 5 menit");
+        //         delay(300000); //Tunggu 5 menit
+        //         Serial.println("Penurunan Selesai");
+        //         break;
+        //     }
+        //     else if (nilai_pH < ph_setpoint_bawah)
+        //     {
+        //         Serial.println("Nilai pH terlalu rendah, menaikan");
+        //         //pompa(pin_pH_up, 10);
+        //         Serial.println("Mengunggu 5 menit");
+        //         delay(300000); //Tunggu 5 menit
+        //         Serial.println("Selesai");
+        //         break;
+        //     }
+        //     else
+        //     {
+        //         Serial.println("Nilai pH sudah stabil, penyesuaian selesai");
+        //         statusStabilisasipH = false;
+        //     }
+        //     delay(1000);
+        //     statusStabilisasipH = false;
+        // }
+
+        kontrol_servo(0);
+        delay(1000);
+        Serial.println("Selesai");
+    }
+
+    //Update data tiap waktu
+    // TODO: tambah sensor lainnya @Sopekok
+    if (counter >= 300)
+    {
+        dataJSON["pH"] = nilai_pH;
+        dataJSON["levelAir"] = kedalmanAir;
+        dataJSON["suhuAir"] = random(0, 100);
+        dataJSON["TDS"] = nilai_TDS;
+        serializeJson(dataJSON, data);
+        Serial.println(data);
+        publishTelemetry(data);
+
+        counter = 0;
+        data = "";
+    }
+
+    delay(1000);
+    counter++;
 }

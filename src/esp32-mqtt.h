@@ -11,16 +11,15 @@
 #include <CloudIoTCoreMqtt.h>
 #include "ciotc_config.h" // Update this file with your configuration
 
-#define LEDWIFICON  19
-#define LEDIOTCON   23
-#define LEDMQTT     18
+// #define LEDWIFICON  19
+// #define LEDIOTCON   23
+// #define LEDMQTT     18
 
 // !!REPLACEME!!
 // The MQTT callback function for commands and configuration updates
 // Place your message handler code here.
 
 ///////////////////////////////
-
 // Initialize WiFi and MQTT for this board
 Client *netClient;
 CloudIoTCoreDevice *device;
@@ -43,13 +42,29 @@ String getJwt() {
   return jwt;
 }
 
-void setupWifi() {
+String terimaBL(){
+  String rawJsonBT;
+  rawJsonBT = program();
+  return rawJsonBT;
+}
+
+void setupWifi() { 
+  DynamicJsonDocument configurasiWifi(116);
+  String wifiConfig;
+  wifiConfig = terimaBL();
+
+  deserializeJson(configurasiWifi, wifiConfig);
+
+  char *ssid = configurasiWifi["ssid"];
+  char *pass = configurasiWifi["pass"];
+
   Serial.println("Starting wifi");
 
+
   WiFi.mode(WIFI_STA);
-  // WiFi.setSleep(false); // May help with disconnect? Seems to have been removed from WiFi
-  WiFi.begin(ssid, password);
+  WiFi.begin(ssid, pass);
   Serial.println("Connecting to WiFi");
+
   while (WiFi.status() != WL_CONNECTED) {
     digitalWrite(LEDWIFICON, LOW);
     delay(50);
@@ -58,6 +73,7 @@ void setupWifi() {
   }
 
   configTime(25200, 0, ntp_primary, ntp_secondary);
+
   Serial.println("Waiting on time sync...");
   while (time(nullptr) < 1510644967) {
     delay(10);

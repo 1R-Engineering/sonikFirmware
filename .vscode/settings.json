@@ -17,7 +17,8 @@
         "limits": "cpp",
         "ostream": "cpp",
         "sstream": "cpp",
-        "streambuf": "cpp"
+        "streambuf": "cpp",
+        "random": "cpp"
     },
     "files.exclude": {
         "**/.git": true,

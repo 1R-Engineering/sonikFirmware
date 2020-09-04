@@ -21,13 +21,20 @@
             
 */
 
+//Inisialisasi library/file yang penting
 #include <Arduino.h>
-#include <EEPROM.h>
-#include <Servo.h>
 #include <esp32-hal-ledc.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#include <EEPROM.h>
+#include <ArduinoJson.h>
+#include "WiFi.h"
+#include "esp32-mqtt.h"
+#include "BluetoothSerial.h"
+#include <Servo.h>
 
 #define pin_tds 14
-#define sample_count 30
+#define sample_count 30a\
 #define VREF 3.3
 
 #define pompa_mix_a 26
@@ -36,6 +43,8 @@
 #define pin_pH_down 33
 #define pin_pH_up 25
 
+String data; //Variabel yang menyimpan data yang akan dikirim
+
 int analogBuffer[sample_count];
 int analogBufferTemp[sample_count];
 int analogBufferIndex = 0, copyIndex = 0;
@@ -43,10 +52,9 @@ float averageVoltage = 0, tdsValue = 0, temperature = 25;
 float nilai_TDS = 0;
 
 float nilai_test_pH = 9;
-int jam;
 const int servo = 32;
 int pos = 0;
-int modeServo; 
+int modeServo;
 
 float ph_setpoint_bawah = 5.5;
 float ph_setpoint_atas = 6.5;
@@ -57,6 +65,12 @@ boolean statusStabilisasipH = true;
 int set_point = 1000; //Wajib diganti 0
 
 Servo servoProbe;
+
+char server_jam[3], server_menit[3], server_detik[3];
+char jam[] = "15";
+char menit[] = "00";
+
+unsigned long lastMillis = 0; //Penganti delay
 
 /*
     Fungsi untuk mengeluarkan carian dari pompa
@@ -198,10 +212,20 @@ void setup()
     servoProbe.attach(servo, 5);
 
     Serial.println("Starting device");
+
+    setupCloudIoT();
 }
 
 void loop()
 {
+    DynamicJsonBuffer dataJSON<200>;
+    mqttClient->loop();
+
+    if (!mqttClient->connected())
+    {
+        connect();
+    }
+
     if (Serial.available())
     {
         if (Serial.parseInt() == 1)
@@ -278,7 +302,13 @@ void loop()
             //         statusStabilisasipH = false;
             //     }
             // }
-
+            dataJSON["pH"] = nilai_ph;
+            dataJSON["TDS"] = nilai_TDS;
+            dataJSON["suhu_Air"] = random(0, 100);
+            dataJSON["level_Air"] = getLevelAir();
+            serializeJson(dataJSON, data);
+            Serial.println(data);
+            publishTelemetry(data);
             delay(1000);
             Serial.println("Servo naik start");
             kontrol_servo(1);
